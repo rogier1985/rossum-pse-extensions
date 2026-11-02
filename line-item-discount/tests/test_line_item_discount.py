@@ -33,7 +33,7 @@ class DiscountTests(unittest.TestCase):
         self.assertEqual(calculate_discounted_amounts([], 10), [])
 
     def test_invalid_inputs(self):
-        for value in [None, "", "bad", "NaN", "Infinity", True]:
+        for value in ["bad", "NaN", "Infinity", True]:
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
                     calculate_discounted_amounts([value], 10)
@@ -45,7 +45,7 @@ class DiscountTests(unittest.TestCase):
 
     def transaction(self):
         rows = [SimpleNamespace(**{
-            "item_amount": "0.05", "item_tax": "0.03", "item_total_amount": "0.08",
+            "item_amount": "0.05", "item_tax": "0.03", "item_amount_total": "0.08",
             **{destination: None for _, destination in FIELD_PAIRS},
         }) for _ in range(3)]
         messages = []
@@ -78,7 +78,7 @@ class DiscountTests(unittest.TestCase):
 
     def test_invalid_final_column_prevents_partial_updates(self):
         tx = self.transaction()
-        tx.field.line_items[-1].item_total_amount = ""
+        tx.field.line_items[-1].item_amount_total = "invalid"
         self.assertTrue(self.run_handler(tx)["messages"])
         for row in tx.field.line_items:
             for _, destination in FIELD_PAIRS:
@@ -117,6 +117,24 @@ class DiscountTests(unittest.TestCase):
         tx.field.line_items[0].item_amount = "invalid"
         self.assertTrue(self.run_handler(tx)["messages"])
         self.assertIsNone(tx.field.line_items[0].item_amount_calculated)
+
+    def test_empty_values_are_zero(self):
+        for empty in [None, "", "   "]:
+            with self.subTest(empty=empty):
+                self.assertEqual(calculate_discounted_amounts([empty, 100], empty),
+                                 [Decimal("0.00"), Decimal("100.00")])
+                tx = self.transaction()
+                for row in tx.field.line_items:
+                    for source, _ in FIELD_PAIRS:
+                        setattr(row, source, empty)
+                self.assertEqual(self.run_handler(tx), {"messages": []})
+                for row in tx.field.line_items:
+                    for _, destination in FIELD_PAIRS:
+                        self.assertEqual(getattr(row, destination), Decimal("0.00"))
+
+    def test_empty_last_row_receives_rounding_remainder(self):
+        self.assertEqual(calculate_discounted_amounts(["0.05", "0.05", None], 10),
+                         [Decimal("0.05"), Decimal("0.05"), Decimal("-0.01")])
 
 
 if __name__ == "__main__":

@@ -12,7 +12,9 @@ FIELD_PAIRS = (
 
 def as_decimal(value: object) -> Decimal:
     """Read a finite, unformatted Rossum number without float arithmetic."""
-    if value is None or isinstance(value, bool):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return Decimal(0)
+    if isinstance(value, bool):
         raise ValueError("A required numeric value is empty or invalid.")
     try:
         result = Decimal(str(value))
@@ -57,7 +59,7 @@ def rossum_hook_request_handler(payload: dict) -> dict:
         rows = list(transaction.field.line_items)
         if not rows:
             return transaction.hook_response()
-        percentage = transaction.field.discount_percentage
+        percentage = getattr(transaction.field, "discount_percentage", None)
         updates = []
         for source, destination in FIELD_PAIRS:
             # Validate every destination before making any changes.

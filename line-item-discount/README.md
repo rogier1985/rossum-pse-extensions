@@ -7,7 +7,7 @@ field `discount_percentage` (10 means 10%) and writes amounts **after discount**
 | --- | --- |
 | `item_amount` | `item_amount_calculated` |
 | `item_tax` | `item_tax_calculated` |
-| `item_total_amount` | `item_total_amount_calculated` |
+| `item_amount_total` | `item_total_amount_calculated` |
 
 Each result is `source × (1 − discount_percentage / 100)`, rounded to two
 decimal places using decimal half-up rounding. For each column separately, the
@@ -38,12 +38,14 @@ network access are required.
 
 Zero percent copies source amounts (subject to rounding); 100% writes zero.
 An empty or absent `discount_percentage` is interpreted as 0%, so calculated
-fields are populated from the source amounts, subject to rounding. Missing/invalid source amounts,
+fields are populated from the source amounts, subject to rounding. Empty strings,
+whitespace-only strings, and null/None source amounts are also interpreted as
+zero. Invalid nonempty source amounts,
 invalid nonempty percentages, percentages outside 0–100, and missing line-item
 schema fields produce a document error and leave existing calculated values
 unchanged. Empty tables produce no changes. Reruns always use the original
-source fields, so discounts never compound. Use explicit zero for zero tax;
-blank values are not assumed to be zero.
+source fields, so discounts never compound. The last row receives the rounding
+remainder even when its source amount is empty.
 
 ## Local verification
 
