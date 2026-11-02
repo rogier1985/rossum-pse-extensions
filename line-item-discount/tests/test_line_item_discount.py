@@ -56,7 +56,10 @@ class DiscountTests(unittest.TestCase):
         )
 
     def run_handler(self, transaction):
-        module = SimpleNamespace(TxScript=SimpleNamespace(from_payload=lambda p: transaction))
+        module = SimpleNamespace(
+            TxScript=SimpleNamespace(from_payload=lambda p: transaction),
+            is_empty=lambda value: value is None or value == "",
+        )
         with patch.dict(sys.modules, {"txscript": module}):
             return rossum_hook_request_handler({})
 
@@ -91,6 +94,29 @@ class DiscountTests(unittest.TestCase):
         tx = self.transaction()
         tx.field.line_items = []
         self.assertEqual(self.run_handler(tx), {"messages": []})
+
+    def test_empty_or_absent_percentage_calculates_at_zero_percent(self):
+        for percentage in [None, "", "absent"]:
+            with self.subTest(percentage=percentage):
+                tx = self.transaction()
+                for row in tx.field.line_items:
+                    for _, destination in FIELD_PAIRS:
+                        setattr(row, destination, Decimal("42.00"))
+                if percentage == "absent":
+                    del tx.field.discount_percentage
+                else:
+                    tx.field.discount_percentage = percentage
+                self.assertEqual(self.run_handler(tx), {"messages": []})
+                for row in tx.field.line_items:
+                    for source, destination in FIELD_PAIRS:
+                        self.assertEqual(getattr(row, destination), Decimal(getattr(row, source)))
+
+    def test_empty_percentage_still_validates_source_amounts(self):
+        tx = self.transaction()
+        tx.field.discount_percentage = ""
+        tx.field.line_items[0].item_amount = "invalid"
+        self.assertTrue(self.run_handler(tx)["messages"])
+        self.assertIsNone(tx.field.line_items[0].item_amount_calculated)
 
 
 if __name__ == "__main__":

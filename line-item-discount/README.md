@@ -37,7 +37,9 @@ replacing the queue URL and code placeholder. No settings, credentials, or
 network access are required.
 
 Zero percent copies source amounts (subject to rounding); 100% writes zero.
-Missing/invalid amounts or percentages, percentages outside 0–100, and missing
+An empty or absent `discount_percentage` is interpreted as 0%, so calculated
+fields are populated from the source amounts, subject to rounding. Missing/invalid source amounts,
+invalid nonempty percentages, percentages outside 0–100, and missing line-item
 schema fields produce a document error and leave existing calculated values
 unchanged. Empty tables produce no changes. Reruns always use the original
 source fields, so discounts never compound. Use explicit zero for zero tax;

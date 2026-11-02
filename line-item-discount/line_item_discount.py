@@ -6,7 +6,7 @@ CENT = Decimal("0.01")
 FIELD_PAIRS = (
     ("item_amount", "item_amount_calculated"),
     ("item_tax", "item_tax_calculated"),
-    ("item_total_amount", "item_total_amount_calculated"),
+    ("item_amount_total", "item_total_amount_calculated"),
 )
 
 
