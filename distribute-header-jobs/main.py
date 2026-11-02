@@ -9,6 +9,8 @@ DEFAULTS = {
     "source_field_id": "item_job",
     "line_table_id": "line_items",
     "target_field_id": "item_job2",
+    "location_source_field_id": "item_location",
+    "location_target_field_id": "item_location2",
     "row_anchor_field_id": None,
     "carry_across_pages": True,
 }
@@ -38,7 +40,8 @@ def location(cell):
 def row_location(row, settings):
     cells = [cell for cell in walk(row.get("children", []))
              if cell.get("category") == "datapoint"
-             and cell.get("schema_id") != settings["target_field_id"]]
+             and cell.get("schema_id") not in (
+                 settings["target_field_id"], settings["location_target_field_id"])]
     anchor = settings["row_anchor_field_id"]
     if anchor:
         cells = [cell for cell in cells if cell.get("schema_id") == anchor]
@@ -59,14 +62,16 @@ def rossum_hook_request_handler(payload):
         warn("Job distribution: settings must be an object.")
         return response
     settings = {**DEFAULTS, **supplied}
-    for key in ("header_table_id", "source_field_id", "line_table_id", "target_field_id"):
+    for key in ("header_table_id", "source_field_id", "line_table_id", "target_field_id",
+                "location_source_field_id", "location_target_field_id"):
         if not isinstance(settings[key], str) or not settings[key].strip():
             warn("Job distribution: invalid setting " + key)
             return response
     anchor = settings["row_anchor_field_id"]
     if ((anchor is not None and (not isinstance(anchor, str) or not anchor.strip()))
             or type(settings["carry_across_pages"]) is not bool
-            or anchor == settings["target_field_id"]):
+            or anchor in (settings["target_field_id"], settings["location_target_field_id"])
+            or settings["target_field_id"] == settings["location_target_field_id"]):
         warn("Job distribution: invalid anchor or carry_across_pages setting.")
         return response
 
@@ -87,18 +92,26 @@ def rossum_hook_request_handler(payload):
         if len(cells) != 1 or (pos := location(cells[0])) is None:
             warn("Job distribution: every header needs one positioned job field; no values changed.")
             return response
-        value = (cells[0].get("content") or {}).get("value") or ""
+        locations = [cell for cell in walk(row.get("children", []))
+                     if cell.get("schema_id") == settings["location_source_field_id"]]
+        if len(locations) != 1:
+            warn("Job distribution: every header needs one location field; no values changed.")
+            return response
+        value = ((cells[0].get("content") or {}).get("value") or "",
+                 (locations[0].get("content") or {}).get("value") or "")
         if pos in jobs and jobs[pos] != value:
-            warn("Job distribution: conflicting jobs at the same position; no values changed.")
+            warn("Job distribution: conflicting jobs or locations at the same position; no values changed.")
             return response
         jobs[pos] = value
     positions = sorted(jobs)
     skipped = 0
     for row in lines.get("children", []):
-        targets = [cell for cell in walk(row.get("children", []))
-                   if cell.get("schema_id") == settings["target_field_id"]]
+        targets = [[cell for cell in walk(row.get("children", []))
+                    if cell.get("schema_id") == settings[key]]
+                   for key in ("target_field_id", "location_target_field_id")]
         pos = row_location(row, settings)
-        if pos is None or len(targets) != 1 or targets[0].get("id") is None:
+        if pos is None or any(len(cells) != 1 or cells[0].get("id") is None
+                              for cells in targets):
             skipped += 1
             continue
         index = bisect_right(positions, pos) - 1
@@ -106,13 +119,13 @@ def rossum_hook_request_handler(payload):
                          and positions[index][0] != pos[0]):
             skipped += 1
             continue
-        value = jobs[positions[index]]
-        target = targets[0]
-        if (target.get("content") or {}).get("value") != value:
-            response["operations"].append({
-                "op": "replace", "id": target["id"],
-                "value": {"content": {"value": value}},
-            })
+        for cells, value in zip(targets, jobs[positions[index]]):
+            target = cells[0]
+            if (target.get("content") or {}).get("value") != value:
+                response["operations"].append({
+                    "op": "replace", "id": target["id"],
+                    "value": {"content": {"value": value}},
+                })
     if skipped:
         warn(f"Job distribution: left {skipped} row(s) unchanged because a position, "
              "destination, or preceding job header was unavailable.")

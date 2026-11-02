@@ -24,13 +24,14 @@ def payload(headers=None, lines=None, settings=None):
             {"category": "multivalue", "schema_id": "line_items", "children": lines or []}]}]}}
 
 
-def header(value, y, page=1):
-    return row(cell("item_job", value, y, page))
+def header(value, y, page=1, location=""):
+    return row(cell("item_job", value, y, page), cell("item_location", location))
 
 
 def line(y, identifier=10, page=1, value="old"):
     return row(cell("description", "item", y, page),
-               cell("item_job2", value, identifier=identifier))
+               cell("item_job2", value, identifier=identifier),
+               cell("item_location2", "", identifier=identifier + 1000))
 
 
 class DistributionTests(unittest.TestCase):
@@ -98,6 +99,41 @@ class DistributionTests(unittest.TestCase):
 
     def test_invalid_settings(self):
         result = self.run_hook([], [], {"carry_across_pages": "false"})
+        self.assertTrue(result["messages"])
+
+    def test_copies_job_and_location_from_same_header_across_pages(self):
+        result = self.run_hook([header("A", 100, location="Amsterdam"),
+                                header("B", 300, 2, location="Rotterdam")],
+                               [line(200, 1), line(50, 2, 2), line(400, 3, 2)])
+        values = {op["id"]: op["value"]["content"]["value"] for op in result["operations"]}
+        self.assertEqual(values, {1: "A", 1001: "Amsterdam", 2: "A",
+                                  1002: "Amsterdam", 3: "B", 1003: "Rotterdam"})
+
+    def test_blank_location_clears_and_destination_box_is_excluded(self):
+        item = line(200, value="A")
+        item["children"][2]["content"].update(value="old", page=9, position=[1, 1, 2, 2])
+        result = self.run_hook([header("A", 100)], [item])
+        self.assertEqual(result["operations"], [
+            {"op": "replace", "id": 1010, "value": {"content": {"value": ""}}}])
+
+    def test_missing_location_source_aborts(self):
+        source = header("A", 100)
+        source["children"].pop()
+        result = self.run_hook([source], [line(200)])
+        self.assertEqual(result["operations"], [])
+        self.assertTrue(result["messages"])
+
+    def test_missing_location_target_skips_both_fields(self):
+        item = line(200)
+        item["children"].pop()
+        result = self.run_hook([header("A", 100, location="Amsterdam")], [item])
+        self.assertEqual(result["operations"], [])
+        self.assertTrue(result["messages"])
+
+    def test_same_job_with_conflicting_locations_aborts(self):
+        result = self.run_hook([header("A", 100, location="Amsterdam"),
+                                header("A", 100, location="Rotterdam")], [line(200)])
+        self.assertEqual(result["operations"], [])
         self.assertTrue(result["messages"])
 
 

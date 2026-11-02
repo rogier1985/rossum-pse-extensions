@@ -3,6 +3,8 @@
   "source_field_id": "item_job",
   "line_table_id": "line_items",
   "target_field_id": "item_job2",
+  "location_source_field_id": "item_location",
+  "location_target_field_id": "item_location2",
   "row_anchor_field_id": null,
   "carry_across_pages": true
 }
